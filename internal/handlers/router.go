@@ -5,7 +5,7 @@ import (
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
-	"github.com/joinids/bot/internal/bot"
+	"github.com/joinids/bot/internal/state"
 )
 
 var menuTexts = map[string]bool{
@@ -28,7 +28,7 @@ func HandleTextRouter(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	if menuTexts[text] {
-		bot.States.Clear(userID)
+		state.States.Clear(userID)
 		switch text {
 		case "➕ Add Account":
 			return HandleAddAccountMenu(b, ctx)
@@ -49,26 +49,26 @@ func HandleTextRouter(b *gotgbot.Bot, ctx *ext.Context) error {
 		}
 	}
 
-	st := bot.States.Get(userID)
+	st := state.States.Get(userID)
 
 	switch st.Key {
-	case bot.StateAddPyrogram, bot.StateAddTelethon,
-		bot.StateAddDirectPhone, bot.StateAddDirectCode, bot.StateAddDirect2FA:
+	case state.StateAddPyrogram, state.StateAddTelethon,
+		state.StateAddDirectPhone, state.StateAddDirectCode, state.StateAddDirect2FA:
 		return HandleAddAccountText(b, ctx)
 
-	case bot.StateAddDBChannel:
+	case state.StateAddDBChannel:
 		return HandleDBChannelText(b, ctx)
 
-	case bot.StateAddSudoer:
+	case state.StateAddSudoer:
 		return HandleSudoerText(b, ctx)
 
-	case bot.StateBroadcast:
+	case state.StateBroadcast:
 		return HandleBroadcastText(b, ctx)
 
-	case bot.StateJoinManual:
+	case state.StateJoinManual:
 		return HandleJoinManualText(b, ctx)
 
-	case bot.StateJoinRange:
+	case state.StateJoinRange:
 		return HandleJoinRangeText(b, ctx)
 	}
 
