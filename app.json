@@ -1,40 +1,40 @@
 {
-  "name": "JoinIDs Bot",
-  "description": "Telegram bot to manage accounts and auto-join channels/groups",
-  "repository": "https://github.com/yourrepo/joinids-bot",
-  "logo": "",
-  "keywords": ["telegram", "bot", "golang"],
-  "stack": "container",
-  "formation": {
-    "worker": {
-      "quantity": 1,
-      "size": "basic"
+    "name": "JoinIDs Bot",
+    "description": "A Telegram bot to manage multiple accounts and auto-join channels/groups.",
+    "keywords": ["telegram", "bot", "golang", "join", "accounts"],
+    "repository": "https://github.com/joinids/bot",
+    "stack": "container",
+    "env": {
+        "BOT_TOKEN": {
+            "description": "Your Telegram bot token from @BotFather.",
+            "value": "",
+            "required": true
+        },
+        "OWNER_ID": {
+            "description": "Your Telegram user ID (get from @userinfobot).",
+            "value": "",
+            "required": true
+        },
+        "MONGO_URI": {
+            "description": "Your MongoDB connection string (MongoDB Atlas recommended).",
+            "value": "",
+            "required": true
+        },
+        "API_ID": {
+            "description": "Your Telegram API ID from my.telegram.org.",
+            "value": "",
+            "required": true
+        },
+        "API_HASH": {
+            "description": "Your Telegram API Hash from my.telegram.org.",
+            "value": "",
+            "required": true
+        }
+    },
+    "formation": {
+        "worker": {
+            "quantity": 1,
+            "size": "basic"
+        }
     }
-  },
-  "env": {
-    "BOT_TOKEN": {
-      "description": "Telegram Bot Token from @BotFather",
-      "required": true
-    },
-    "OWNER_ID": {
-      "description": "Your Telegram User ID (get from @userinfobot)",
-      "required": true
-    },
-    "MONGO_URI": {
-      "description": "MongoDB connection URI (MongoDB Atlas recommended)",
-      "required": true
-    },
-    "API_ID": {
-      "description": "Telegram API ID from my.telegram.org",
-      "required": true,
-      "value": "38145963"
-    },
-    "API_HASH": {
-      "description": "Telegram API Hash from my.telegram.org",
-      "required": true,
-      "value": "9325201ac0b1f87528cede06dd88484d"
-    }
-  },
-  "addons": [],
-  "buildpacks": []
 }
