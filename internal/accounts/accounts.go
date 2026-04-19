@@ -44,9 +44,11 @@ var (
 
 func newClient(sessionFile string) (*telegram.Client, error) {
 	client, err := telegram.NewClient(telegram.ClientConfig{
-		SessionFile: sessionFile,
-		AppID:       config.C.APIID,
-		AppHash:     config.C.APIHash,
+		SessionFile:    sessionFile,
+		ServerHost:     "149.154.167.50:443",
+		PublicKeysFile: "/app/tg_public_keys.pem",
+		AppID:          config.C.APIID,
+		AppHash:        config.C.APIHash,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create mtproto client: %w", err)
@@ -66,37 +68,29 @@ func ValidatePyrogramSession(session string, addedBy int64) (database.Account, e
 		return database.Account{}, err
 	}
 
-	me, err := client.UsersGetFullUser(&telegram.UsersGetFullUserParams{
-		Id: &telegram.InputUserSelf{},
-	})
+	users, err := client.UsersGetUsers([]telegram.InputUser{&telegram.InputUserSelf{}})
 	if err != nil {
 		return database.Account{}, fmt.Errorf("session invalid or expired: %w", err)
 	}
-
-	var userID int32
-	var phone string
-
-	if me.FullUser != nil {
-		userID = me.FullUser.ID
+	if len(users) == 0 {
+		return database.Account{}, fmt.Errorf("no user returned")
 	}
 
-	for _, u := range me.Users {
-		if obj, ok := u.(*telegram.UserObj); ok {
-			phone = obj.Phone
-			userID = obj.ID
-			break
-		}
+	user, ok := users[0].(*telegram.UserObj)
+	if !ok {
+		return database.Account{}, fmt.Errorf("unexpected user type")
 	}
 
+	phone := user.Phone
 	if phone == "" {
-		phone = fmt.Sprintf("uid_%d", userID)
+		phone = fmt.Sprintf("uid_%d", user.Id)
 	}
 
 	return database.Account{
 		Type:        "pyrogram",
 		SessionStr:  session,
 		Phone:       phone,
-		TelegramUID: int64(userID),
+		TelegramUID: int64(user.Id),
 		AddedBy:     addedBy,
 	}, nil
 }
@@ -117,12 +111,12 @@ func StartDirectLogin(userID int64, phone string) error {
 		return err
 	}
 
-	result, err := client.AuthSendCode(&telegram.AuthSendCodeParams{
-		PhoneNumber: phone,
-		ApiId:       config.C.APIID,
-		ApiHash:     config.C.APIHash,
-		Settings:    &telegram.CodeSettings{},
-	})
+	result, err := client.AuthSendCode(
+		phone,
+		config.C.APIID,
+		config.C.APIHash,
+		&telegram.CodeSettings{},
+	)
 	if err != nil {
 		return fmt.Errorf("failed to send OTP: %w", err)
 	}
@@ -159,11 +153,11 @@ func SubmitCode(userID int64, code string) (database.Account, bool, error) {
 
 	code = strings.ReplaceAll(code, " ", "")
 
-	authResult, err := session.Client.AuthSignIn(&telegram.AuthSignInParams{
-		PhoneNumber:   session.Phone,
-		PhoneCodeHash: session.SentHash,
-		PhoneCode:     code,
-	})
+	authResult, err := session.Client.AuthSignIn(
+		session.Phone,
+		session.SentHash,
+		code,
+	)
 	if err != nil {
 		errStr := err.Error()
 		if strings.Contains(errStr, "SESSION_PASSWORD_NEEDED") {
@@ -175,7 +169,7 @@ func SubmitCode(userID int64, code string) (database.Account, bool, error) {
 		return database.Account{}, false, fmt.Errorf("invalid code: %w", err)
 	}
 
-	acc, err := buildAccountFromAuth(authResult, session.Client, userID)
+	acc, err := buildAccountFromAuth(authResult, userID)
 	return acc, false, err
 }
 
@@ -198,17 +192,15 @@ func Submit2FA(userID int64, password string) (database.Account, error) {
 		return database.Account{}, fmt.Errorf("failed to compute SRP: %w", err)
 	}
 
-	authResult, err := session.Client.AuthCheckPassword(&telegram.AuthCheckPasswordParams{
-		Password: srpAnswer,
-	})
+	authResult, err := session.Client.AuthCheckPassword(srpAnswer)
 	if err != nil {
 		return database.Account{}, fmt.Errorf("wrong 2FA password: %w", err)
 	}
 
-	return buildAccountFromAuth(authResult, session.Client, userID)
+	return buildAccountFromAuth(authResult, userID)
 }
 
-func buildAccountFromAuth(auth telegram.AuthAuthorization, client *telegram.Client, addedBy int64) (database.Account, error) {
+func buildAccountFromAuth(auth telegram.AuthAuthorization, addedBy int64) (database.Account, error) {
 	authObj, ok := auth.(*telegram.AuthAuthorizationObj)
 	if !ok {
 		return database.Account{}, fmt.Errorf("unexpected auth response type")
@@ -225,14 +217,14 @@ func buildAccountFromAuth(auth telegram.AuthAuthorization, client *telegram.Clie
 
 	phone := user.Phone
 	if phone == "" {
-		phone = fmt.Sprintf("uid_%d", user.ID)
+		phone = fmt.Sprintf("uid_%d", user.Id)
 	}
 
 	return database.Account{
 		Type:        "direct",
 		SessionStr:  sessionFilePath(fmt.Sprintf("direct_%d", addedBy)),
 		Phone:       phone,
-		TelegramUID: int64(user.ID),
+		TelegramUID: int64(user.Id),
 		AddedBy:     addedBy,
 	}, nil
 }
