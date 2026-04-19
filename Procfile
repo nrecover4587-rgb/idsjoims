@@ -1,0 +1,1 @@
+worker: ./joinids-bot
