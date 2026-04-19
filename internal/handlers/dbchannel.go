@@ -6,7 +6,7 @@ import (
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
-	"github.com/joinids/bot/internal/bot"
+	"github.com/joinids/bot/internal/state"
 	"github.com/joinids/bot/internal/database"
 	"github.com/joinids/bot/internal/keyboards"
 )
@@ -21,7 +21,9 @@ func HandleDBChannelsMenu(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	channels, _ := database.Instance.GetAllDBChannels()
 	_, err := ctx.EffectiveMessage.Reply(b,
-		fmt.Sprintf("📢 DB Channels: *%d*\n\nSelect a channel:", len(channels)),
+		fmt.Sprintf("📢 DB Channels: *%d*
+
+Select a channel:", len(channels)),
 		&gotgbot.SendMessageOpts{ParseMode: "Markdown", ReplyMarkup: keyboards.DBChannelList(channels, false)},
 	)
 	return err
@@ -30,7 +32,9 @@ func HandleDBChannelsMenu(b *gotgbot.Bot, ctx *ext.Context) error {
 func HandleCBShowDBChannels(b *gotgbot.Bot, ctx *ext.Context) error {
 	channels, _ := database.Instance.GetAllDBChannels()
 	_, _, err := ctx.EffectiveMessage.EditText(b,
-		fmt.Sprintf("📢 DB Channels: *%d*\n\nSelect a channel:", len(channels)),
+		fmt.Sprintf("📢 DB Channels: *%d*
+
+Select a channel:", len(channels)),
 		&gotgbot.EditMessageTextOpts{ParseMode: "Markdown", ReplyMarkup: keyboards.DBChannelList(channels, false)},
 	)
 	return err
@@ -38,11 +42,15 @@ func HandleCBShowDBChannels(b *gotgbot.Bot, ctx *ext.Context) error {
 
 func HandleCBAddDBChannel(b *gotgbot.Bot, ctx *ext.Context) error {
 	userID := ctx.EffectiveUser.Id
-	bot.States.Set(userID, bot.StateAddDBChannel, nil)
+	state.States.Set(userID, state.StateAddDBChannel, nil)
 	_, _, err := ctx.EffectiveMessage.EditText(b,
-		"📝 Send the DB channel link or username:\n\n"+
-			"• Public: `https://t.me/username` or `@username`\n"+
-			"• Private: `https://t.me/+hash`\n"+
+		"📝 Send the DB channel link or username:
+
+"+
+			"• Public: `https://t.me/username` or `@username`
+"+
+			"• Private: `https://t.me/+hash`
+"+
 			"• Format: `Name | @username`",
 		&gotgbot.EditMessageTextOpts{ParseMode: "Markdown"},
 	)
@@ -60,7 +68,11 @@ func HandleCBDBChannelDetail(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	ch := channels[idx]
-	text := fmt.Sprintf("📢 *DB Channel Details*\n\nName: `%s`\nUsername: `%s`\nPrivate: `%v`", ch.Name, ch.Username, ch.IsPrivate)
+	text := fmt.Sprintf("📢 *DB Channel Details*
+
+Name: `%s`
+Username: `%s`
+Private: `%v`", ch.Name, ch.Username, ch.IsPrivate)
 	_, _, err := ctx.EffectiveMessage.EditText(b, text, &gotgbot.EditMessageTextOpts{
 		ParseMode:   "Markdown",
 		ReplyMarkup: keyboards.DBChannelDetail(idx),
@@ -85,8 +97,8 @@ func HandleCBDeleteDBChannel(b *gotgbot.Bot, ctx *ext.Context) error {
 
 func HandleDBChannelText(b *gotgbot.Bot, ctx *ext.Context) error {
 	userID := ctx.EffectiveUser.Id
-	st := bot.States.Get(userID)
-	if st.Key != bot.StateAddDBChannel {
+	st := state.States.Get(userID)
+	if st.Key != state.StateAddDBChannel {
 		return nil
 	}
 
@@ -112,7 +124,11 @@ func HandleDBChannelText(b *gotgbot.Bot, ctx *ext.Context) error {
 		name = fmt.Sprintf("Channel @%s", username)
 	} else {
 		_, err := ctx.EffectiveMessage.Reply(b,
-			"❌ Invalid format! Send either:\n• `https://t.me/username`\n• `@username`\n• `https://t.me/+hash`\n• `Name | @username`",
+			"❌ Invalid format! Send either:
+• `https://t.me/username`
+• `@username`
+• `https://t.me/+hash`
+• `Name | @username`",
 			&gotgbot.SendMessageOpts{ParseMode: "Markdown"},
 		)
 		return err
@@ -121,11 +137,11 @@ func HandleDBChannelText(b *gotgbot.Bot, ctx *ext.Context) error {
 	ch := database.DBChannel{Name: name, Username: username, IsPrivate: isPrivate}
 	if err := database.Instance.AddDBChannel(ch); err != nil {
 		_, err = ctx.EffectiveMessage.Reply(b, "❌ Failed to save channel to DB.", nil)
-		bot.States.Clear(userID)
+		state.States.Clear(userID)
 		return err
 	}
 
-	bot.States.Clear(userID)
+	state.States.Clear(userID)
 	_, err := ctx.EffectiveMessage.Reply(b, fmt.Sprintf("✅ DB Channel *%s* added!", name), &gotgbot.SendMessageOpts{ParseMode: "Markdown"})
 	return err
 }
