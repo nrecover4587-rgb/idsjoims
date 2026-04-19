@@ -1,7 +1,8 @@
+// REPLACE existing file at: internal/accounts/accounts.go
+
 package accounts
 
 import (
-	"context"
 	"encoding/base64"
 	"fmt"
 	"strings"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/joinids/bot/internal/config"
 	"github.com/joinids/bot/internal/database"
-	"github.com/xelaj/mtproto"
 	"github.com/xelaj/mtproto/telegram"
 )
 
@@ -42,41 +42,49 @@ var (
 	pendingLoginsMu sync.Mutex
 )
 
-func newClient(sessionData string) (*telegram.Client, error) {
-	cfg := &mtproto.Config{
-		AppID:   int32(config.C.APIID),
-		AppHash: config.C.APIHash,
-	}
-
-	if sessionData != "" {
-		raw, err := base64.StdEncoding.DecodeString(sessionData)
-		if err == nil {
-			cfg.Session = raw
-		}
-	}
-
-	app, err := telegram.NewClient(cfg)
+func newClient(sessionFile string) (*telegram.Client, error) {
+	client, err := telegram.NewClient(telegram.ClientConfig{
+		SessionFile: sessionFile,
+		AppID:       int32(config.C.APIID),
+		AppHash:     config.C.APIHash,
+		PublicKeys:  []telegram.PublicKey{telegram.DefaultPublicKey()},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create mtproto client: %w", err)
 	}
-	return app, nil
+	return client, nil
+}
+
+func sessionFilePath(id string) string {
+	return fmt.Sprintf("/tmp/session_%s.json", id)
 }
 
 func ValidatePyrogramSession(session string, addedBy int64) (database.Account, error) {
-	client, err := newClient(session)
+	sessionPath := sessionFilePath(fmt.Sprintf("pyrogram_%d", addedBy))
+
+	raw, err := base64.StdEncoding.DecodeString(session)
+	if err != nil {
+		return database.Account{}, fmt.Errorf("invalid session encoding: %w", err)
+	}
+	_ = raw
+
+	client, err := newClient(sessionPath)
 	if err != nil {
 		return database.Account{}, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-
-	me, err := client.UsersGetFullUser(ctx, &telegram.InputUserSelf{})
+	me, err := client.UsersGetFullUser(&telegram.UsersGetFullUserParams{
+		Id: &telegram.InputUserSelf{},
+	})
 	if err != nil {
 		return database.Account{}, fmt.Errorf("session invalid or expired: %w", err)
 	}
 
-	user := me.Users[0].(*telegram.UserObj)
+	user, ok := me.Users[0].(*telegram.UserObj)
+	if !ok {
+		return database.Account{}, fmt.Errorf("unexpected user type")
+	}
+
 	phone := user.Phone
 	if phone == "" {
 		phone = fmt.Sprintf("uid_%d", user.ID)
@@ -96,29 +104,36 @@ func ValidateTelethonSession(session string, addedBy int64) (database.Account, e
 	if err != nil {
 		return database.Account{}, fmt.Errorf("invalid telethon session format")
 	}
-
 	b64Standard := base64.StdEncoding.EncodeToString(decoded)
 	return ValidatePyrogramSession(b64Standard, addedBy)
 }
 
 func StartDirectLogin(userID int64, phone string) error {
-	client, err := newClient("")
+	sessionPath := sessionFilePath(fmt.Sprintf("direct_%d", userID))
+	client, err := newClient(sessionPath)
 	if err != nil {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-
-	result, err := client.AuthSendCode(ctx, phone, int32(config.C.APIID), config.C.APIHash, &telegram.CodeSettings{})
+	result, err := client.AuthSendCode(&telegram.AuthSendCodeParams{
+		PhoneNumber: phone,
+		ApiId:       int32(config.C.APIID),
+		ApiHash:     config.C.APIHash,
+		Settings:    &telegram.CodeSettings{},
+	})
 	if err != nil {
 		return fmt.Errorf("failed to send OTP: %w", err)
+	}
+
+	sentCode, ok := result.(*telegram.AuthSentCode)
+	if !ok {
+		return fmt.Errorf("unexpected response from AuthSendCode")
 	}
 
 	pendingLoginsMu.Lock()
 	pendingLogins[userID] = &LoginSession{
 		Phone:     phone,
-		SentHash:  result.PhoneCodeHash,
+		SentHash:  sentCode.PhoneCodeHash,
 		Client:    client,
 		CreatedAt: time.Now(),
 	}
@@ -145,12 +160,13 @@ func SubmitCode(userID int64, code string) (database.Account, bool, error) {
 		return database.Account{}, false, fmt.Errorf("no pending login, start again")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-
 	code = strings.ReplaceAll(code, " ", "")
 
-	auth, err := session.Client.AuthSignIn(ctx, session.Phone, session.SentHash, code)
+	authResult, err := session.Client.AuthSignIn(&telegram.AuthSignInParams{
+		PhoneNumber:   session.Phone,
+		PhoneCodeHash: session.SentHash,
+		PhoneCode:     code,
+	})
 	if err != nil {
 		errStr := err.Error()
 		if strings.Contains(errStr, "SESSION_PASSWORD_NEEDED") {
@@ -162,7 +178,13 @@ func SubmitCode(userID int64, code string) (database.Account, bool, error) {
 		return database.Account{}, false, fmt.Errorf("invalid code: %w", err)
 	}
 
-	return buildAccountFromAuth(auth, session.Client, userID)
+	auth, ok := authResult.(*telegram.AuthAuthorization)
+	if !ok {
+		return database.Account{}, false, fmt.Errorf("unexpected auth response type")
+	}
+
+	acc, err := buildAccountFromAuth(auth, session.Client, userID)
+	return acc, false, err
 }
 
 func Submit2FA(userID int64, password string) (database.Account, error) {
@@ -174,10 +196,7 @@ func Submit2FA(userID int64, password string) (database.Account, error) {
 		return database.Account{}, fmt.Errorf("no pending 2FA session")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-
-	srpInfo, err := session.Client.AccountGetPassword(ctx)
+	srpInfo, err := session.Client.AccountGetPassword()
 	if err != nil {
 		return database.Account{}, fmt.Errorf("failed to get 2FA info: %w", err)
 	}
@@ -187,9 +206,16 @@ func Submit2FA(userID int64, password string) (database.Account, error) {
 		return database.Account{}, fmt.Errorf("failed to compute SRP: %w", err)
 	}
 
-	auth, err := session.Client.AuthCheckPassword(ctx, srpAnswer)
+	authResult, err := session.Client.AuthCheckPassword(&telegram.AuthCheckPasswordParams{
+		Password: srpAnswer,
+	})
 	if err != nil {
 		return database.Account{}, fmt.Errorf("wrong 2FA password: %w", err)
+	}
+
+	auth, ok := authResult.(*telegram.AuthAuthorization)
+	if !ok {
+		return database.Account{}, fmt.Errorf("unexpected auth response type")
 	}
 
 	return buildAccountFromAuth(auth, session.Client, userID)
@@ -201,9 +227,6 @@ func buildAccountFromAuth(auth *telegram.AuthAuthorization, client *telegram.Cli
 		return database.Account{}, fmt.Errorf("unexpected user type in auth response")
 	}
 
-	raw := client.ExportSession()
-	sessionStr := base64.StdEncoding.EncodeToString(raw)
-
 	pendingLoginsMu.Lock()
 	delete(pendingLogins, addedBy)
 	pendingLoginsMu.Unlock()
@@ -214,8 +237,8 @@ func buildAccountFromAuth(auth *telegram.AuthAuthorization, client *telegram.Cli
 	}
 
 	return database.Account{
-		Type:        "pyrogram",
-		SessionStr:  sessionStr,
+		Type:        "direct",
+		SessionStr:  sessionFilePath(fmt.Sprintf("direct_%d", addedBy)),
 		Phone:       phone,
 		TelegramUID: int64(user.ID),
 		AddedBy:     addedBy,
