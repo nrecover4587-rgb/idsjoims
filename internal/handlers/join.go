@@ -10,7 +10,7 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 	"github.com/joinids/bot/internal/accounts"
-	"github.com/joinids/bot/internal/bot"
+	"github.com/joinids/bot/internal/state"
 	"github.com/joinids/bot/internal/database"
 	"github.com/joinids/bot/internal/joinmanager"
 	"github.com/joinids/bot/internal/keyboards"
@@ -24,7 +24,7 @@ func HandleJoinMenu(b *gotgbot.Bot, ctx *ext.Context) error {
 		_, err := ctx.EffectiveMessage.Reply(b, "❌ You don't have permission to use this.", nil)
 		return err
 	}
-	bot.States.Clear(userID)
+	state.States.Clear(userID)
 	_, err := ctx.EffectiveMessage.Reply(b, "🔗 Choose joining method:", &gotgbot.SendMessageOpts{
 		ReplyMarkup: keyboards.JoinMenu(),
 	})
@@ -54,12 +54,14 @@ func HandleCBJoinDBChannel(b *gotgbot.Bot, ctx *ext.Context) error {
 		return nil
 	}
 
-	bot.States.Set(userID, bot.StateJoinRange, map[string]interface{}{
+	state.States.Set(userID, state.StateJoinRange, map[string]interface{}{
 		"channel_idx": idx,
 	})
 
 	_, _, err := ctx.EffectiveMessage.EditText(b,
-		fmt.Sprintf("📢 Channel: *%s*\n\nChoose join scope:", channels[idx].Name),
+		fmt.Sprintf("📢 Channel: *%s*
+
+Choose join scope:", channels[idx].Name),
 		&gotgbot.EditMessageTextOpts{
 			ParseMode:   "Markdown",
 			ReplyMarkup: keyboards.JoinRangeOrAll(idx),
@@ -76,19 +78,22 @@ func HandleCBJoinRangeChoice(b *gotgbot.Bot, ctx *ext.Context) error {
 	var mode string
 	fmt.Sscanf(data, "joinrange_%d_%s", &idx, &mode)
 
-	st := bot.States.Get(userID)
+	st := state.States.Get(userID)
 	st.Data["channel_idx"] = idx
 
 	if mode == "all" {
 		st.Data["start_id"] = 0
 		st.Data["end_id"] = 0
-		bot.States.Set(userID, bot.StateJoinRange, st.Data)
+		state.States.Set(userID, state.StateJoinRange, st.Data)
 		return startJoinProcess(b, ctx, userID, idx, 0, 0)
 	}
 
-	bot.States.Set(userID, bot.StateJoinRange, st.Data)
+	state.States.Set(userID, state.StateJoinRange, st.Data)
 	_, _, err := ctx.EffectiveMessage.EditText(b,
-		"🔢 Send the message ID range:\n\n• Single message: `123`\n• Range: `100-200`",
+		"🔢 Send the message ID range:
+
+• Single message: `123`
+• Range: `100-200`",
 		&gotgbot.EditMessageTextOpts{ParseMode: "Markdown"},
 	)
 	return err
@@ -96,8 +101,8 @@ func HandleCBJoinRangeChoice(b *gotgbot.Bot, ctx *ext.Context) error {
 
 func HandleJoinRangeText(b *gotgbot.Bot, ctx *ext.Context) error {
 	userID := ctx.EffectiveUser.Id
-	st := bot.States.Get(userID)
-	if st.Key != bot.StateJoinRange {
+	st := state.States.Get(userID)
+	if st.Key != state.StateJoinRange {
 		return nil
 	}
 
@@ -123,15 +128,17 @@ func HandleJoinRangeText(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	idx, _ := st.Data["channel_idx"].(int)
-	bot.States.Clear(userID)
+	state.States.Clear(userID)
 	return startJoinProcess(b, ctx, userID, idx, startID, endID)
 }
 
 func HandleCBJoinManual(b *gotgbot.Bot, ctx *ext.Context) error {
 	userID := ctx.EffectiveUser.Id
-	bot.States.Set(userID, bot.StateJoinManual, nil)
+	state.States.Set(userID, state.StateJoinManual, nil)
 	_, _, err := ctx.EffectiveMessage.EditText(b,
-		"✏️ Paste the links you want to join (one per line or space-separated):\n\nSupports `t.me/username` and `t.me/+hash` formats.",
+		"✏️ Paste the links you want to join (one per line or space-separated):
+
+Supports `t.me/username` and `t.me/+hash` formats.",
 		&gotgbot.EditMessageTextOpts{ParseMode: "Markdown"},
 	)
 	return err
@@ -139,8 +146,8 @@ func HandleCBJoinManual(b *gotgbot.Bot, ctx *ext.Context) error {
 
 func HandleJoinManualText(b *gotgbot.Bot, ctx *ext.Context) error {
 	userID := ctx.EffectiveUser.Id
-	st := bot.States.Get(userID)
-	if st.Key != bot.StateJoinManual {
+	st := state.States.Get(userID)
+	if st.Key != state.StateJoinManual {
 		return nil
 	}
 
@@ -150,7 +157,7 @@ func HandleJoinManualText(b *gotgbot.Bot, ctx *ext.Context) error {
 		return err
 	}
 
-	bot.States.Clear(userID)
+	state.States.Clear(userID)
 	return runJoin(b, ctx, links)
 }
 
@@ -211,7 +218,9 @@ func startJoinProcess(b *gotgbot.Bot, ctx *ext.Context, userID int64, chIdx, sta
 	}
 
 	msg, _ := ctx.EffectiveMessage.Reply(b,
-		fmt.Sprintf("⏳ *Step 1/3* — Joining DB channel with all accounts...\n\n👥 Accounts: %d", len(accs)),
+		fmt.Sprintf("⏳ *Step 1/3* — Joining DB channel with all accounts...
+
+👥 Accounts: %d", len(accs)),
 		&gotgbot.SendMessageOpts{ParseMode: "Markdown"},
 	)
 
@@ -238,7 +247,10 @@ func startJoinProcess(b *gotgbot.Bot, ctx *ext.Context, userID int64, chIdx, sta
 
 		if (i+1)%5 == 0 || i+1 == len(accs) {
 			_, _ = msg.EditText(b,
-				fmt.Sprintf("⏳ *Step 1/3* — Joining DB channel...\n\n👥 Progress: %d/%d\n✅ Joined: %d  ❌ Failed: %d",
+				fmt.Sprintf("⏳ *Step 1/3* — Joining DB channel...
+
+👥 Progress: %d/%d
+✅ Joined: %d  ❌ Failed: %d",
 					i+1, len(accs), len(joined), len(failedNames)),
 				&gotgbot.EditMessageTextOpts{ParseMode: "Markdown"},
 			)
@@ -248,17 +260,23 @@ func startJoinProcess(b *gotgbot.Bot, ctx *ext.Context, userID int64, chIdx, sta
 	if len(joined) == 0 {
 		failList := ""
 		for _, f := range failedNames {
-			failList += fmt.Sprintf("• %s\n", f)
+			failList += fmt.Sprintf("• %s
+", f)
 		}
 		_, _ = msg.EditText(b,
-			fmt.Sprintf("❌ *No accounts could join DB channel!*\n\nFailed (%d):\n%s", len(failedNames), failList),
+			fmt.Sprintf("❌ *No accounts could join DB channel!*
+
+Failed (%d):
+%s", len(failedNames), failList),
 			&gotgbot.EditMessageTextOpts{ParseMode: "Markdown"},
 		)
 		return nil
 	}
 
 	_, _ = msg.EditText(b,
-		fmt.Sprintf("✅ Step 1 done: *%d/%d* accounts joined\n\n⏳ *Step 2/3* — Fetching links...", len(joined), len(accs)),
+		fmt.Sprintf("✅ Step 1 done: *%d/%d* accounts joined
+
+⏳ *Step 2/3* — Fetching links...", len(joined), len(accs)),
 		&gotgbot.EditMessageTextOpts{ParseMode: "Markdown"},
 	)
 
@@ -269,7 +287,8 @@ func startJoinProcess(b *gotgbot.Bot, ctx *ext.Context, userID int64, chIdx, sta
 			short = short[:200]
 		}
 		_, _ = msg.EditText(b,
-			fmt.Sprintf("❌ Failed to fetch links:\n`%s`", short),
+			fmt.Sprintf("❌ Failed to fetch links:
+`%s`", short),
 			&gotgbot.EditMessageTextOpts{ParseMode: "Markdown"},
 		)
 		return nil
@@ -281,14 +300,21 @@ func startJoinProcess(b *gotgbot.Bot, ctx *ext.Context, userID int64, chIdx, sta
 			rangeText = fmt.Sprintf("%d → %d", startID, endID)
 		}
 		_, _ = msg.EditText(b,
-			fmt.Sprintf("❌ No links found.\n\nChecked: %d messages\nRange: %s", msgCount, rangeText),
+			fmt.Sprintf("❌ No links found.
+
+Checked: %d messages
+Range: %s", msgCount, rangeText),
 			&gotgbot.EditMessageTextOpts{ParseMode: "Markdown"},
 		)
 		return nil
 	}
 
 	_, _ = msg.EditText(b,
-		fmt.Sprintf("✅ Step 2 done: Found *%d* links from %d messages\n\n⏳ *Step 3/3* — Joining links...\n\n📊 Progress: 0%%",
+		fmt.Sprintf("✅ Step 2 done: Found *%d* links from %d messages
+
+⏳ *Step 3/3* — Joining links...
+
+📊 Progress: 0%%",
 			len(links), msgCount),
 		&gotgbot.EditMessageTextOpts{ParseMode: "Markdown"},
 	)
@@ -305,7 +331,13 @@ func startJoinProcess(b *gotgbot.Bot, ctx *ext.Context, userID int64, chIdx, sta
 		floodInfo := buildFloodInfo()
 
 		_, _ = msg.EditText(b,
-			fmt.Sprintf("🚀 *Step 3/3 — Joining links...*\n\n📊 Progress: %.1f%% (%d/%d)\n✅ Success: %d\n⚠️ Already in: %d\n❌ Failed: %d\n🚫 Invalid: %d%s",
+			fmt.Sprintf("🚀 *Step 3/3 — Joining links...*
+
+📊 Progress: %.1f%% (%d/%d)
+✅ Success: %d
+⚠️ Already in: %d
+❌ Failed: %d
+🚫 Invalid: %d%s",
 				pct, done, total, r.Success, r.AlreadyIn, r.Failed, r.Invalid, floodInfo),
 			&gotgbot.EditMessageTextOpts{ParseMode: "Markdown"},
 		)
@@ -313,20 +345,35 @@ func startJoinProcess(b *gotgbot.Bot, ctx *ext.Context, userID int64, chIdx, sta
 
 	failList := ""
 	for _, f := range failedNames {
-		failList += fmt.Sprintf("• %s\n", f)
+		failList += fmt.Sprintf("• %s
+", f)
 	}
 
 	finalText := fmt.Sprintf(
-		"✅ *All Steps Completed!*\n\n"+
-			"*Step 1 — DB Channel:*\n✅ Joined: %d  ❌ Failed: %d\n\n"+
-			"*Step 2 — Links Found:* %d\n\n"+
-			"*Step 3 — Join Results:*\n✅ Success: %d\n⚠️ Already in: %d\n❌ Failed: %d\n🚫 Invalid: %d",
+		"✅ *All Steps Completed!*
+
+"+
+			"*Step 1 — DB Channel:*
+✅ Joined: %d  ❌ Failed: %d
+
+"+
+			"*Step 2 — Links Found:* %d
+
+"+
+			"*Step 3 — Join Results:*
+✅ Success: %d
+⚠️ Already in: %d
+❌ Failed: %d
+🚫 Invalid: %d",
 		len(joined), len(failedNames),
 		len(links),
 		result.Success, result.AlreadyIn, result.Failed, result.Invalid,
 	)
 	if failList != "" {
-		finalText += fmt.Sprintf("\n\n*Failed accounts:*\n%s", failList)
+		finalText += fmt.Sprintf("
+
+*Failed accounts:*
+%s", failList)
 	}
 
 	_, _ = msg.EditText(b, finalText, &gotgbot.EditMessageTextOpts{ParseMode: "Markdown"})
@@ -341,7 +388,9 @@ func runJoin(b *gotgbot.Bot, ctx *ext.Context, links []string) error {
 	}
 
 	msg, _ := ctx.EffectiveMessage.Reply(b,
-		fmt.Sprintf("⏳ Joining *%d* links with *%d* accounts...\n\n📊 Progress: 0%%", len(links), len(accs)),
+		fmt.Sprintf("⏳ Joining *%d* links with *%d* accounts...
+
+📊 Progress: 0%%", len(links), len(accs)),
 		&gotgbot.SendMessageOpts{ParseMode: "Markdown"},
 	)
 
@@ -357,14 +406,25 @@ func runJoin(b *gotgbot.Bot, ctx *ext.Context, links []string) error {
 		floodInfo := buildFloodInfo()
 
 		_, _ = msg.EditText(b,
-			fmt.Sprintf("🚀 *Joining links...*\n\n📊 Progress: %.1f%% (%d/%d)\n✅ Success: %d\n⚠️ Already in: %d\n❌ Failed: %d\n🚫 Invalid: %d%s",
+			fmt.Sprintf("🚀 *Joining links...*
+
+📊 Progress: %.1f%% (%d/%d)
+✅ Success: %d
+⚠️ Already in: %d
+❌ Failed: %d
+🚫 Invalid: %d%s",
 				pct, done, total, r.Success, r.AlreadyIn, r.Failed, r.Invalid, floodInfo),
 			&gotgbot.EditMessageTextOpts{ParseMode: "Markdown"},
 		)
 	})
 
 	_, _ = msg.EditText(b,
-		fmt.Sprintf("✅ *Done!*\n\n✅ Success: %d\n⚠️ Already in: %d\n❌ Failed: %d\n🚫 Invalid: %d",
+		fmt.Sprintf("✅ *Done!*
+
+✅ Success: %d
+⚠️ Already in: %d
+❌ Failed: %d
+🚫 Invalid: %d",
 			result.Success, result.AlreadyIn, result.Failed, result.Invalid),
 		&gotgbot.EditMessageTextOpts{ParseMode: "Markdown"},
 	)
@@ -376,11 +436,14 @@ func buildFloodInfo() string {
 	if len(floods) == 0 {
 		return ""
 	}
-	out := "\n\n⏰ *FloodWait:*"
+	out := "
+
+⏰ *FloodWait:*"
 	for phone, remaining := range floods {
 		mins := int(remaining.Minutes())
 		secs := int(remaining.Seconds()) % 60
-		out += fmt.Sprintf("\n• `%s`: %dm %ds", phone, mins, secs)
+		out += fmt.Sprintf("
+• `%s`: %dm %ds", phone, mins, secs)
 	}
 	return out
 }
