@@ -5,7 +5,7 @@ import (
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
-	"github.com/joinids/bot/internal/bot"
+	"github.com/joinids/bot/internal/state"
 	"github.com/joinids/bot/internal/config"
 	"github.com/joinids/bot/internal/database"
 	"github.com/joinids/bot/internal/keyboards"
@@ -28,23 +28,33 @@ func HandleStart(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	owner := isOwner(userID)
 
-	text := "👋 Welcome to *JoinIDs Bot*\n\n"
-	text += "🤖 Manage multiple Telegram accounts and auto-join channels/groups.\n\n"
+	text := "👋 Welcome to *JoinIDs Bot*
+
+"
+	text += "🤖 Manage multiple Telegram accounts and auto-join channels/groups.
+
+"
 
 	if owner {
-		text += "👑 You are the *Owner*.\n\n"
+		text += "👑 You are the *Owner*.
+
+"
 	} else {
 		auth, _ := isAuthorized(userID)
 		if auth {
-			text += "⭐ You are a *Sudoer*.\n\n"
+			text += "⭐ You are a *Sudoer*.
+
+"
 		} else {
-			text += "👤 You are a regular user.\n\n"
+			text += "👤 You are a regular user.
+
+"
 		}
 	}
 
 	text += "Use the menu below to navigate."
 
-	bot.States.Clear(userID)
+	state.States.Clear(userID)
 
 	_, err := ctx.EffectiveMessage.Reply(b, text, &gotgbot.SendMessageOpts{
 		ParseMode:   "Markdown",
@@ -55,7 +65,7 @@ func HandleStart(b *gotgbot.Bot, ctx *ext.Context) error {
 
 func HandleBackMain(b *gotgbot.Bot, ctx *ext.Context) error {
 	userID := ctx.EffectiveUser.Id
-	bot.States.Clear(userID)
+	state.States.Clear(userID)
 
 	owner := isOwner(userID)
 	_, _, err := ctx.EffectiveMessage.EditText(b, "🏠 Main menu", &gotgbot.EditMessageTextOpts{
